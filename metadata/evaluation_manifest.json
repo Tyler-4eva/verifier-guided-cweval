@@ -1,0 +1,11 @@
+{
+  "run_id": "smoke_3561f5e5f5b5",
+  "task_id": "cwe_020_0",
+  "cwe_id": "CWE-20",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "cweval_commit": "e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7",
+  "generation_environment": "Google Colab",
+  "execution_environment": "GitHub Actions + Docker",
+  "sandbox_required": true,
+  "raw_generation": "evals/cwe20/generated_0/core/py/cwe_020_0_raw.py"
+}

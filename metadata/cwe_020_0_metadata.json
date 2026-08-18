@@ -1,0 +1,36 @@
+{
+  "timestamp_utc": "2026-08-17T23:58:30.524133+00:00",
+  "run_id": "smoke_3561f5e5f5b5",
+  "stage": "SMOKE_CANARY",
+  "generation_index": 0,
+  "task_id": "cwe_020_0",
+  "cwe_id": "CWE-20",
+  "language": "python",
+  "cweval_commit": "e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7",
+  "provider": "OpenAI",
+  "api_client": "openai-python",
+  "openai_sdk_version": "2.54.0",
+  "api_endpoint": "responses",
+  "requested_model": "gpt-5.4-mini-2026-03-17",
+  "returned_model": "gpt-5.4-mini-2026-03-17",
+  "response_id": "resp_051ad942a6396589006a83a023428487d2940faf9f9db13c0b",
+  "response_status": "completed",
+  "reasoning_effort": "none",
+  "max_output_tokens": 2048,
+  "elapsed_seconds": 5.02713942527771,
+  "prompt_characters": 1563,
+  "response_characters": 1701,
+  "usage": {
+    "input_tokens": 323,
+    "input_tokens_details": {
+      "cache_write_tokens": 0,
+      "cached_tokens": 0
+    },
+    "output_tokens": 358,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 681
+  },
+  "raw_output_path": "/content/drive/MyDrive/My Research Papers/Verifier_Guided_Security_Repair/cweval_evals/smoke_3561f5e5f5b5_canary/generated_0/core/py/cwe_020_0_raw.py"
+}
