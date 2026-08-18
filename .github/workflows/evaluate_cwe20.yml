@@ -8,14 +8,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # ============================================================
-      # 1. CHECK OUT RESEARCH REPOSITORY
+      # 1. CHECK OUT OUR RESEARCH REPOSITORY
       # ============================================================
       - name: Checkout research repository
         uses: actions/checkout@v6
 
+
       # ============================================================
-      # 2. CLONE EXACT CWEVAL VERSION
+      # 2. CLONE THE EXACT CWEVAL REVISION USED IN COLAB
       # ============================================================
       - name: Clone exact CWEval revision
         shell: bash
@@ -34,11 +36,12 @@ jobs:
             e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7
 
           echo ""
-          echo "CWEval commit:"
+          echo "Exact CWEval revision:"
           git rev-parse HEAD
 
+
       # ============================================================
-      # 3. VERIFY ORIGINAL AI-GENERATED SAMPLE
+      # 3. VERIFY THE ORIGINAL AI-GENERATED SAMPLE EXISTS
       # ============================================================
       - name: Verify CWE-20 input
         shell: bash
@@ -52,13 +55,14 @@ jobs:
 
           if [ ! -f "$RAW_FILE" ]; then
             echo ""
-            echo "ERROR: Missing generated sample:"
+            echo "ERROR: Missing original AI-generated sample:"
             echo "$RAW_FILE"
             exit 1
           fi
 
           echo ""
-          echo "✓ Original CWE-20 sample exists."
+          echo "✓ Original CWE-20 sample found."
+
 
       # ============================================================
       # 4. CREATE A WRITABLE TEMPORARY EVALUATION DIRECTORY
@@ -70,19 +74,16 @@ jobs:
 
           EVAL_WORK="$RUNNER_TEMP/cwe20_eval"
 
-          echo "Creating writable evaluation directory:"
+          echo "Preparing:"
           echo "$EVAL_WORK"
 
           rm -rf "$EVAL_WORK"
           mkdir -p "$EVAL_WORK"
 
-          # Copy the ORIGINAL generated sample.
           cp -a \
             "$GITHUB_WORKSPACE/evals/cwe20/." \
             "$EVAL_WORK/"
 
-          # The CWEval container user must be able to create
-          # _task.py, res.json, logs, etc.
           chmod -R a+rwX "$EVAL_WORK"
 
           echo ""
@@ -95,13 +96,16 @@ jobs:
           ls -ld "$EVAL_WORK/generated_0"
           ls -ld "$EVAL_WORK/generated_0/core/py"
 
+
       # ============================================================
-      # 5. PULL OFFICIAL CWEVAL IMAGE
+      # 5. PULL THE OFFICIAL CWEVAL DOCKER IMAGE
       # ============================================================
       - name: Pull official CWEval Docker image
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "Pulling co1lin/cweval..."
 
           docker pull co1lin/cweval
 
@@ -115,6 +119,7 @@ jobs:
           docker image inspect \
             co1lin/cweval \
             > docker_image_inspect.json
+
 
       # ============================================================
       # 6. VERIFY CWEVAL PYTHON ENVIRONMENT
@@ -137,30 +142,51 @@ jobs:
               echo "========================================"
 
               echo ""
-              echo "Python:"
+              echo "Python location:"
               command -v python
+
+              echo ""
+              echo "Python version:"
               python --version
 
               echo ""
-              echo "Pytest:"
+              echo "Pytest location:"
               command -v pytest
+
+              echo ""
+              echo "Pytest version:"
               pytest --version
 
               echo ""
               echo "✓ CWEval Python environment available."
             '
 
+
       # ============================================================
-      # 7. RUN CWEVAL IN WRITABLE SANDBOX
+      # 7. RUN PYTHON-ONLY CWEVAL EVALUATION
+      #
+      # IMPORTANT:
+      #
+      # We intentionally DO NOT call pipeline() here because
+      # pipeline() invokes compile_parsed(), which performs
+      # compiled-language environment checks.
+      #
+      # For Python:
+      #
+      #   parse_generated()
+      #   run_tests()
+      #   _merge_results()
+      #   report_pass_at_k()
+      #
       # ============================================================
-      - name: Run CWEval sandbox evaluation
+      - name: Run Python-only CWEval sandbox evaluation
         shell: bash
         run: |
           set -euo pipefail
 
           EVAL_WORK="$RUNNER_TEMP/cwe20_eval"
 
-          echo "Starting sandboxed CWEval evaluation..."
+          echo "Starting Python-only CWEval evaluation..."
 
           docker run --rm \
             -v "$RUNNER_TEMP/CWEval:/home/ubuntu/CWEval" \
@@ -185,40 +211,53 @@ jobs:
               python --version
 
               echo ""
-              echo "Evaluation directory permissions:"
-              ls -ld /eval
-              ls -ld /eval/generated_0
-              ls -ld /eval/generated_0/core/py
-
-              echo ""
-              echo "Evaluation input:"
+              echo "Evaluation directory:"
               find /eval -maxdepth 8 -type f -print
 
               echo ""
               echo "Write test:"
-              touch /eval/cweval_write_test.tmp
-              ls -l /eval/cweval_write_test.tmp
-              rm /eval/cweval_write_test.tmp
+              touch /eval/write_test.tmp
+              ls -l /eval/write_test.tmp
+              rm /eval/write_test.tmp
 
               echo ""
-              echo "✓ Evaluation directory is writable."
+              echo "✓ Evaluation directory writable."
 
               echo ""
               echo "========================================"
-              echo "Starting CWEval pipeline"
+              echo "Running CWEval Python evaluation"
               echo "========================================"
 
-              python cweval/evaluate.py pipeline \
-                --eval_path /eval \
-                --num_proc 1 \
-                --docker False
+              python -c "
+from cweval.evaluate import Evaler
+
+evaler = Evaler(
+    eval_path=\"/eval\",
+    num_proc=1
+)
+
+print(\"STEP 1: Parsing generated response...\")
+evaler.parse_generated()
+
+print(\"STEP 2: Running functional/security tests...\")
+evaler.run_tests()
+
+print(\"STEP 3: Merging results...\")
+evaler._merge_results()
+
+print(\"STEP 4: Reporting pass@k...\")
+evaler.report_pass_at_k(mode=\"auto\")
+
+print(\"PYTHON CWEVAL EVALUATION COMPLETE\")
+"
 
               echo ""
-              echo "✓ CWEval evaluation completed."
+              echo "✓ Python-only CWEval evaluation completed."
             '
 
+
       # ============================================================
-      # 8. COPY GENERATED RESULTS BACK INTO GITHUB WORKSPACE
+      # 8. COPY RESULTS BACK INTO THE GITHUB WORKSPACE
       # ============================================================
       - name: Copy evaluation results back
         if: always()
@@ -228,16 +267,10 @@ jobs:
 
           EVAL_WORK="$RUNNER_TEMP/cwe20_eval"
 
-          echo "Making evaluation results readable..."
-
-          sudo chmod -R a+rwX "$EVAL_WORK" || true
-
-          echo ""
-          echo "Files produced by CWEval:"
+          echo "Files created in temporary evaluation directory:"
           find "$EVAL_WORK" -maxdepth 10 -type f -print || true
 
-          echo ""
-          echo "Copying results back to repository workspace..."
+          sudo chmod -R a+rwX "$EVAL_WORK" || true
 
           mkdir -p "$GITHUB_WORKSPACE/evals/cwe20"
 
@@ -246,10 +279,11 @@ jobs:
             "$GITHUB_WORKSPACE/evals/cwe20/"
 
           echo ""
-          echo "✓ Results copied back."
+          echo "✓ Evaluation results copied back."
+
 
       # ============================================================
-      # 9. DISPLAY CWEVAL RESULTS
+      # 9. DISPLAY THE CWEVAL RESULT
       # ============================================================
       - name: Display CWEval results
         if: always()
@@ -260,6 +294,7 @@ jobs:
           echo "======================================================"
 
           find evals/cwe20 -maxdepth 10 -type f -print || true
+
 
           echo ""
           echo "======================================================"
@@ -272,6 +307,7 @@ jobs:
             echo "res_all.json not found."
           fi
 
+
           echo ""
           echo "======================================================"
           echo "generated_0/res.json"
@@ -283,8 +319,109 @@ jobs:
             echo "generated_0/res.json not found."
           fi
 
+
       # ============================================================
-      # 10. SAVE RESULTS AS DOWNLOADABLE GITHUB ARTIFACT
+      # 10. CREATE A SIMPLE FINAL CLASSIFICATION
+      # ============================================================
+      - name: Classify CWE-20 result
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "evals/cwe20/generated_0/res.json"
+          )
+
+          if not path.exists():
+              print("res.json is not available.")
+              raise SystemExit(0)
+
+          data = json.loads(
+              path.read_text()
+          )
+
+          print("=" * 60)
+          print("CWE-20 AI GENERATION RESULT")
+          print("=" * 60)
+
+          if len(data) != 1:
+              print(
+                  "Unexpected number of result records:",
+                  len(data)
+              )
+
+          for test_file, result in data.items():
+
+              functional = bool(
+                  result.get("functional")
+              )
+
+              secure = bool(
+                  result.get("secure")
+              )
+
+              if functional and secure:
+                  classification = "F+ S+"
+
+              elif functional and not secure:
+                  classification = "F+ S-"
+
+              elif not functional and secure:
+                  classification = "F- S+"
+
+              else:
+                  classification = "F- S-"
+
+              print("Test file      :", test_file)
+              print("Functional     :", functional)
+              print("Secure         :", secure)
+              print("Classification :", classification)
+
+              record = {
+                  "task_id": "cwe_020_0",
+                  "cwe_id": "CWE-20",
+                  "functional": functional,
+                  "secure": secure,
+                  "classification": classification,
+                  "source_test": test_file,
+              }
+
+              Path(
+                  "evals/cwe20/classification.json"
+              ).write_text(
+                  json.dumps(
+                      record,
+                      indent=2
+                  )
+              )
+
+          PY
+
+
+      # ============================================================
+      # 11. DISPLAY CLASSIFICATION
+      # ============================================================
+      - name: Display final classification
+        if: always()
+        shell: bash
+        run: |
+          echo ""
+          echo "======================================================"
+          echo "FINAL CLASSIFICATION"
+          echo "======================================================"
+
+          if [ -f evals/cwe20/classification.json ]; then
+            cat evals/cwe20/classification.json
+          else
+            echo "classification.json not produced."
+          fi
+
+
+      # ============================================================
+      # 12. UPLOAD ALL RESULTS AS AN ARTIFACT
       # ============================================================
       - name: Upload CWEval evaluation artifacts
         if: always()
