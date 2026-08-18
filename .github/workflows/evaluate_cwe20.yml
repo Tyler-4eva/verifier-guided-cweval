@@ -9,13 +9,13 @@ jobs:
 
     steps:
       # ============================================================
-      # 1. CHECKOUT OUR RESEARCH REPOSITORY
+      # 1. CHECK OUT RESEARCH REPOSITORY
       # ============================================================
       - name: Checkout research repository
         uses: actions/checkout@v6
 
       # ============================================================
-      # 2. CLONE THE EXACT CWEVAL REVISION USED IN COLAB
+      # 2. CLONE EXACT CWEVAL VERSION
       # ============================================================
       - name: Clone exact CWEval revision
         shell: bash
@@ -34,42 +34,74 @@ jobs:
             e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7
 
           echo ""
-          echo "Exact CWEval commit:"
+          echo "CWEval commit:"
           git rev-parse HEAD
 
       # ============================================================
-      # 3. VERIFY THAT OUR ORIGINAL AI SAMPLE EXISTS
+      # 3. VERIFY ORIGINAL AI-GENERATED SAMPLE
       # ============================================================
-      - name: Verify CWE-20 evaluation input
+      - name: Verify CWE-20 input
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Evaluation files:"
-          find evals/cwe20 -type f -print
-
           RAW_FILE="evals/cwe20/generated_0/core/py/cwe_020_0_raw.py"
+
+          echo "Research input files:"
+          find evals/cwe20 -type f -print
 
           if [ ! -f "$RAW_FILE" ]; then
             echo ""
-            echo "ERROR: Generated CWE-20 sample is missing."
-            echo "Expected:"
+            echo "ERROR: Missing generated sample:"
             echo "$RAW_FILE"
             exit 1
           fi
 
           echo ""
-          echo "✓ Original CWE-20 AI sample found."
+          echo "✓ Original CWE-20 sample exists."
 
       # ============================================================
-      # 4. PULL OFFICIAL CWEVAL DOCKER IMAGE
+      # 4. CREATE A WRITABLE TEMPORARY EVALUATION DIRECTORY
+      # ============================================================
+      - name: Prepare writable evaluation workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVAL_WORK="$RUNNER_TEMP/cwe20_eval"
+
+          echo "Creating writable evaluation directory:"
+          echo "$EVAL_WORK"
+
+          rm -rf "$EVAL_WORK"
+          mkdir -p "$EVAL_WORK"
+
+          # Copy the ORIGINAL generated sample.
+          cp -a \
+            "$GITHUB_WORKSPACE/evals/cwe20/." \
+            "$EVAL_WORK/"
+
+          # The CWEval container user must be able to create
+          # _task.py, res.json, logs, etc.
+          chmod -R a+rwX "$EVAL_WORK"
+
+          echo ""
+          echo "Temporary evaluation contents:"
+          find "$EVAL_WORK" -type f -print
+
+          echo ""
+          echo "Permissions:"
+          ls -ld "$EVAL_WORK"
+          ls -ld "$EVAL_WORK/generated_0"
+          ls -ld "$EVAL_WORK/generated_0/core/py"
+
+      # ============================================================
+      # 5. PULL OFFICIAL CWEVAL IMAGE
       # ============================================================
       - name: Pull official CWEval Docker image
         shell: bash
         run: |
           set -euo pipefail
-
-          echo "Pulling official CWEval image..."
 
           docker pull co1lin/cweval
 
@@ -85,7 +117,7 @@ jobs:
             > docker_image_inspect.json
 
       # ============================================================
-      # 5. VERIFY THE ACTUAL CWEVAL PYTHON ENVIRONMENT
+      # 6. VERIFY CWEVAL PYTHON ENVIRONMENT
       # ============================================================
       - name: Verify CWEval Python environment
         shell: bash
@@ -105,54 +137,41 @@ jobs:
               echo "========================================"
 
               echo ""
-              echo "PATH:"
-              echo "$PATH"
-
-              echo ""
-              echo "Python location:"
+              echo "Python:"
               command -v python
-
-              echo ""
-              echo "Python version:"
               python --version
 
               echo ""
-              echo "Pytest location:"
+              echo "Pytest:"
               command -v pytest
-
-              echo ""
-              echo "Pytest version:"
               pytest --version
 
               echo ""
-              echo "✓ CWEval Python environment is available."
+              echo "✓ CWEval Python environment available."
             '
 
       # ============================================================
-      # 6. RUN THE GENERATED CWE-20 SAMPLE INSIDE THE SANDBOX
+      # 7. RUN CWEVAL IN WRITABLE SANDBOX
       # ============================================================
       - name: Run CWEval sandbox evaluation
         shell: bash
         run: |
           set -euo pipefail
 
+          EVAL_WORK="$RUNNER_TEMP/cwe20_eval"
+
           echo "Starting sandboxed CWEval evaluation..."
 
           docker run --rm \
             -v "$RUNNER_TEMP/CWEval:/home/ubuntu/CWEval" \
-            -v "$GITHUB_WORKSPACE/evals/cwe20:/eval" \
+            -v "$EVAL_WORK:/eval" \
             -w /home/ubuntu/CWEval \
             co1lin/cweval \
             zsh -lc '
               set -e
 
-              # ------------------------------------------
-              # Activate CWEval environment explicitly
-              # ------------------------------------------
-
               export CWEVAL_ENV=/home/ubuntu/miniforge3/envs/cweval
               export PATH="$CWEVAL_ENV/bin:$PATH"
-
               export PYTHONPATH=/home/ubuntu/CWEval
 
               echo ""
@@ -166,13 +185,23 @@ jobs:
               python --version
 
               echo ""
-              echo "Pytest:"
-              command -v pytest
-              pytest --version
+              echo "Evaluation directory permissions:"
+              ls -ld /eval
+              ls -ld /eval/generated_0
+              ls -ld /eval/generated_0/core/py
 
               echo ""
               echo "Evaluation input:"
               find /eval -maxdepth 8 -type f -print
+
+              echo ""
+              echo "Write test:"
+              touch /eval/cweval_write_test.tmp
+              ls -l /eval/cweval_write_test.tmp
+              rm /eval/cweval_write_test.tmp
+
+              echo ""
+              echo "✓ Evaluation directory is writable."
 
               echo ""
               echo "========================================"
@@ -185,11 +214,42 @@ jobs:
                 --docker False
 
               echo ""
-              echo "✓ CWEval evaluation pipeline completed."
+              echo "✓ CWEval evaluation completed."
             '
 
       # ============================================================
-      # 7. DISPLAY RESULTS
+      # 8. COPY GENERATED RESULTS BACK INTO GITHUB WORKSPACE
+      # ============================================================
+      - name: Copy evaluation results back
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EVAL_WORK="$RUNNER_TEMP/cwe20_eval"
+
+          echo "Making evaluation results readable..."
+
+          sudo chmod -R a+rwX "$EVAL_WORK" || true
+
+          echo ""
+          echo "Files produced by CWEval:"
+          find "$EVAL_WORK" -maxdepth 10 -type f -print || true
+
+          echo ""
+          echo "Copying results back to repository workspace..."
+
+          mkdir -p "$GITHUB_WORKSPACE/evals/cwe20"
+
+          cp -a \
+            "$EVAL_WORK/." \
+            "$GITHUB_WORKSPACE/evals/cwe20/"
+
+          echo ""
+          echo "✓ Results copied back."
+
+      # ============================================================
+      # 9. DISPLAY CWEVAL RESULTS
       # ============================================================
       - name: Display CWEval results
         if: always()
@@ -224,7 +284,7 @@ jobs:
           fi
 
       # ============================================================
-      # 8. UPLOAD ALL RESULTS
+      # 10. SAVE RESULTS AS DOWNLOADABLE GITHUB ARTIFACT
       # ============================================================
       - name: Upload CWEval evaluation artifacts
         if: always()
