@@ -1,5 +1,4 @@
 name: CWEval CWE-20 Sandbox Evaluation
-
 on:
   workflow_dispatch:
 
