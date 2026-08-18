@@ -1,0 +1,107 @@
+name: CWEval CWE-20 Sandbox Evaluation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout research evaluation bundle
+        uses: actions/checkout@v4
+
+      - name: Clone exact CWEval revision
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git clone https://github.com/Co1lin/CWEval.git "$RUNNER_TEMP/CWEval"
+
+          cd "$RUNNER_TEMP/CWEval"
+
+          git checkout e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7
+
+          echo "CWEval commit:"
+          git rev-parse HEAD
+
+      - name: Pull official CWEval sandbox image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker pull co1lin/cweval
+
+          docker image inspect co1lin/cweval \
+            --format '{{.Id}}'
+
+          docker image inspect co1lin/cweval \
+            > docker_image_inspect.json
+
+      - name: Inspect evaluation input
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          find evals/cwe20 -type f -print
+
+          test -f \
+            evals/cwe20/generated_0/core/py/cwe_020_0_raw.py
+
+          echo "Evaluation input found."
+
+      - name: Run CWEval inside Docker sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -v "$RUNNER_TEMP/CWEval:/home/ubuntu/CWEval" \
+            -v "$GITHUB_WORKSPACE/evals/cwe20:/eval" \
+            -w /home/ubuntu/CWEval \
+            co1lin/cweval \
+            bash -lc '
+              set -euo pipefail
+
+              export PYTHONPATH=/home/ubuntu/CWEval
+
+              echo "Python:"
+              python --version
+
+              echo "CWEval revision:"
+              git rev-parse HEAD
+
+              python cweval/evaluate.py pipeline \
+                --eval_path /eval \
+                --num_proc 1 \
+                --docker False
+            '
+
+      - name: Display result files
+        if: always()
+        shell: bash
+        run: |
+          echo "Generated evaluation files:"
+          find evals/cwe20 -maxdepth 5 -type f -print
+
+          echo ""
+          echo "res_all.json:"
+          if [ -f evals/cwe20/res_all.json ]; then
+            cat evals/cwe20/res_all.json
+          fi
+
+          echo ""
+          echo "res.json:"
+          if [ -f evals/cwe20/generated_0/res.json ]; then
+            cat evals/cwe20/generated_0/res.json
+          fi
+
+      - name: Save evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwe20-evaluation-results
+          path: |
+            evals/cwe20/
+            docker_image_inspect.json
+          if-no-files-found: warn
