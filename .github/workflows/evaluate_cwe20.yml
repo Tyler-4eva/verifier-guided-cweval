@@ -8,15 +8,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ------------------------------------------------------------
-      # 1. CHECK OUT THIS RESEARCH REPOSITORY
-      # ------------------------------------------------------------
+      # ============================================================
+      # 1. CHECKOUT OUR RESEARCH REPOSITORY
+      # ============================================================
       - name: Checkout research repository
         uses: actions/checkout@v6
 
-      # ------------------------------------------------------------
-      # 2. CLONE THE EXACT CWEVAL VERSION USED IN COLAB
-      # ------------------------------------------------------------
+      # ============================================================
+      # 2. CLONE THE EXACT CWEVAL REVISION USED IN COLAB
+      # ============================================================
       - name: Clone exact CWEval revision
         shell: bash
         run: |
@@ -34,40 +34,42 @@ jobs:
             e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7
 
           echo ""
-          echo "CWEval commit:"
+          echo "Exact CWEval commit:"
           git rev-parse HEAD
 
-      # ------------------------------------------------------------
-      # 3. VERIFY OUR GENERATED CWE-20 SAMPLE EXISTS
-      # ------------------------------------------------------------
+      # ============================================================
+      # 3. VERIFY THAT OUR ORIGINAL AI SAMPLE EXISTS
+      # ============================================================
       - name: Verify CWE-20 evaluation input
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Repository evaluation files:"
+          echo "Evaluation files:"
           find evals/cwe20 -type f -print
 
           RAW_FILE="evals/cwe20/generated_0/core/py/cwe_020_0_raw.py"
 
           if [ ! -f "$RAW_FILE" ]; then
-            echo "ERROR: Required generated sample not found:"
+            echo ""
+            echo "ERROR: Generated CWE-20 sample is missing."
+            echo "Expected:"
             echo "$RAW_FILE"
             exit 1
           fi
 
           echo ""
-          echo "✓ CWE-20 generated sample found."
+          echo "✓ Original CWE-20 AI sample found."
 
-      # ------------------------------------------------------------
-      # 4. PULL CWEVAL'S OFFICIAL DOCKER IMAGE
-      # ------------------------------------------------------------
+      # ============================================================
+      # 4. PULL OFFICIAL CWEVAL DOCKER IMAGE
+      # ============================================================
       - name: Pull official CWEval Docker image
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Pulling co1lin/cweval..."
+          echo "Pulling official CWEval image..."
 
           docker pull co1lin/cweval
 
@@ -82,10 +84,10 @@ jobs:
             co1lin/cweval \
             > docker_image_inspect.json
 
-      # ------------------------------------------------------------
-      # 5. CHECK THE CWEVAL CONTAINER ENVIRONMENT
-      # ------------------------------------------------------------
-      - name: Verify Python inside CWEval container
+      # ============================================================
+      # 5. VERIFY THE ACTUAL CWEVAL PYTHON ENVIRONMENT
+      # ============================================================
+      - name: Verify CWEval Python environment
         shell: bash
         run: |
           set -euo pipefail
@@ -95,8 +97,12 @@ jobs:
             zsh -lc '
               set -e
 
-              echo "Shell:"
-              echo "$SHELL"
+              export CWEVAL_ENV=/home/ubuntu/miniforge3/envs/cweval
+              export PATH="$CWEVAL_ENV/bin:$PATH"
+
+              echo "========================================"
+              echo "CWEval environment"
+              echo "========================================"
 
               echo ""
               echo "PATH:"
@@ -104,19 +110,27 @@ jobs:
 
               echo ""
               echo "Python location:"
-              which python
+              command -v python
 
               echo ""
               echo "Python version:"
               python --version
 
               echo ""
-              echo "✓ CWEval container Python is available."
+              echo "Pytest location:"
+              command -v pytest
+
+              echo ""
+              echo "Pytest version:"
+              pytest --version
+
+              echo ""
+              echo "✓ CWEval Python environment is available."
             '
 
-      # ------------------------------------------------------------
-      # 6. RUN THE ACTUAL CWEVAL EVALUATION
-      # ------------------------------------------------------------
+      # ============================================================
+      # 6. RUN THE GENERATED CWE-20 SAMPLE INSIDE THE SANDBOX
+      # ============================================================
       - name: Run CWEval sandbox evaluation
         shell: bash
         run: |
@@ -132,18 +146,38 @@ jobs:
             zsh -lc '
               set -e
 
+              # ------------------------------------------
+              # Activate CWEval environment explicitly
+              # ------------------------------------------
+
+              export CWEVAL_ENV=/home/ubuntu/miniforge3/envs/cweval
+              export PATH="$CWEVAL_ENV/bin:$PATH"
+
               export PYTHONPATH=/home/ubuntu/CWEval
 
               echo ""
+              echo "========================================"
+              echo "Execution environment"
+              echo "========================================"
+
+              echo ""
               echo "Python:"
+              command -v python
               python --version
 
               echo ""
-              echo "Evaluation directory:"
-              find /eval -maxdepth 5 -type f -print
+              echo "Pytest:"
+              command -v pytest
+              pytest --version
 
               echo ""
-              echo "Running CWEval pipeline..."
+              echo "Evaluation input:"
+              find /eval -maxdepth 8 -type f -print
+
+              echo ""
+              echo "========================================"
+              echo "Starting CWEval pipeline"
+              echo "========================================"
 
               python cweval/evaluate.py pipeline \
                 --eval_path /eval \
@@ -151,12 +185,12 @@ jobs:
                 --docker False
 
               echo ""
-              echo "✓ CWEval pipeline completed."
+              echo "✓ CWEval evaluation pipeline completed."
             '
 
-      # ------------------------------------------------------------
-      # 7. DISPLAY THE RESULT FILES IN THE GITHUB LOG
-      # ------------------------------------------------------------
+      # ============================================================
+      # 7. DISPLAY RESULTS
+      # ============================================================
       - name: Display CWEval results
         if: always()
         shell: bash
@@ -165,7 +199,7 @@ jobs:
           echo "Generated evaluation files"
           echo "======================================================"
 
-          find evals/cwe20 -maxdepth 8 -type f -print || true
+          find evals/cwe20 -maxdepth 10 -type f -print || true
 
           echo ""
           echo "======================================================"
@@ -189,9 +223,9 @@ jobs:
             echo "generated_0/res.json not found."
           fi
 
-      # ------------------------------------------------------------
-      # 8. SAVE ALL EVALUATION OUTPUTS AS A DOWNLOADABLE ARTIFACT
-      # ------------------------------------------------------------
+      # ============================================================
+      # 8. UPLOAD ALL RESULTS
+      # ============================================================
       - name: Upload CWEval evaluation artifacts
         if: always()
         uses: actions/upload-artifact@v6
