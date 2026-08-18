@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Checkout research evaluation bundle
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clone exact CWEval revision
         shell: bash
@@ -22,7 +22,7 @@ jobs:
 
           git checkout e9a2a124c8c53679b6d8d27adfd2f6c40e7576d7
 
-          echo "CWEval commit:"
+          echo "CWEval commit on host:"
           git rev-parse HEAD
 
       - name: Pull official CWEval sandbox image
@@ -32,6 +32,7 @@ jobs:
 
           docker pull co1lin/cweval
 
+          echo "Docker image:"
           docker image inspect co1lin/cweval \
             --format '{{.Id}}'
 
@@ -43,12 +44,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo "Files uploaded for evaluation:"
           find evals/cwe20 -type f -print
 
           test -f \
             evals/cwe20/generated_0/core/py/cwe_020_0_raw.py
 
-          echo "Evaluation input found."
+          echo "✓ Evaluation input found."
 
       - name: Run CWEval inside Docker sandbox
         shell: bash
@@ -65,11 +67,10 @@ jobs:
 
               export PYTHONPATH=/home/ubuntu/CWEval
 
-              echo "Python:"
+              echo "Python inside CWEval container:"
               python --version
 
-              echo "CWEval revision:"
-              git rev-parse HEAD
+              echo "Starting CWEval evaluation..."
 
               python cweval/evaluate.py pipeline \
                 --eval_path /eval \
@@ -82,23 +83,29 @@ jobs:
         shell: bash
         run: |
           echo "Generated evaluation files:"
-          find evals/cwe20 -maxdepth 5 -type f -print
+          find evals/cwe20 -maxdepth 6 -type f -print || true
 
           echo ""
-          echo "res_all.json:"
+          echo "================ res_all.json ================"
+
           if [ -f evals/cwe20/res_all.json ]; then
             cat evals/cwe20/res_all.json
+          else
+            echo "res_all.json not found"
           fi
 
           echo ""
-          echo "res.json:"
+          echo "================ res.json ===================="
+
           if [ -f evals/cwe20/generated_0/res.json ]; then
             cat evals/cwe20/generated_0/res.json
+          else
+            echo "generated_0/res.json not found"
           fi
 
       - name: Save evaluation artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cwe20-evaluation-results
           path: |
